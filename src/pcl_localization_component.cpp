@@ -5,7 +5,7 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
 {
   declare_parameter("global_frame_id", "map");
   declare_parameter("odom_frame_id", "odom");
-  declare_parameter("base_frame_id", "base_link");
+  declare_parameter("base_frame_id", "velodyne");
   declare_parameter("registration_method", "NDT");
   declare_parameter("ndt_resolution", 1.0);
   declare_parameter("ndt_step_size", 0.1);
@@ -249,6 +249,7 @@ void PCLLocalization::initialPoseReceived(geometry_msgs::msg::PoseStamped::Share
   pose_pub_->publish(corrent_pose_stamped_);
 }
 
+
 void PCLLocalization::mapReceived(sensor_msgs::msg::PointCloud2::SharedPtr msg)
 {
   RCLCPP_INFO(get_logger(), "mapReceived");
@@ -297,8 +298,11 @@ void PCLLocalization::odomReceived(nav_msgs::msg::Odometry::ConstSharedPtr msg)
   tf2::fromMsg(corrent_pose_stamped_.pose.orientation, previous_quat_tf);
   tf2::Matrix3x3(previous_quat_tf).getRPY(roll, pitch, yaw);
 
-  roll += msg->twist.twist.angular.x * dt_odom;
-  pitch += msg->twist.twist.angular.y * dt_odom;
+  // Remove roll and pitch because robot will most likely be planar.
+//  roll += msg->twist.twist.angular.x * dt_odom;
+//  pitch += msg->twist.twist.angular.y * dt_odom;
+//  roll = 0;
+//  pitch = 0;
   yaw += msg->twist.twist.angular.z * dt_odom;
 
   Eigen::Quaterniond quat_eig =
@@ -308,10 +312,11 @@ void PCLLocalization::odomReceived(nav_msgs::msg::Odometry::ConstSharedPtr msg)
 
   geometry_msgs::msg::Quaternion quat_msg = tf2::toMsg(quat_eig);
 
+  // Remove effect of the z position.
   Eigen::Vector3d odom{
     msg->twist.twist.linear.x,
     msg->twist.twist.linear.y,
-    msg->twist.twist.linear.z};
+    0};
   Eigen::Vector3d delta_position = quat_eig.matrix() * dt_odom * odom;
 
   corrent_pose_stamped_.pose.position.x += delta_position.x();

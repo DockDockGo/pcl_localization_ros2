@@ -26,7 +26,7 @@ def generate_launch_description():
         executable='static_transform_publisher',
         arguments=['0','0','0','0','0','0','1','odom','velodyne']
         )
-    
+
     # imu_tf = launch_ros.actions.Node(
     #     name='imu_tf',
     #     package='tf2_ros',
@@ -46,7 +46,7 @@ def generate_launch_description():
         namespace='',
         package='pcl_localization_ros2',
         executable='pcl_localization_node',
-        remappings=[('/cloud','/velodyne_points')],
+        remappings=[('/cloud','/velodyne_points'), ('/odom', '/camera/odom/sample')],
         parameters=[localization_param_dir],
         output='screen')
 
@@ -90,7 +90,7 @@ def generate_launch_description():
     ld.add_action(from_inactive_to_active)
     
     ld.add_action(pcl_localization)
-    # ld.add_action(lidar_tf)
+    ld.add_action(lidar_tf)
     ld.add_action(to_inactive)
 
     return ld
