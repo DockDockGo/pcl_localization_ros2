@@ -1,14 +1,11 @@
 #include <pcl_localization/pcl_localization_component.hpp>
 PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
 : rclcpp_lifecycle::LifecycleNode("pcl_localization", options),
-  clock_(RCL_ROS_TIME),
-  tfbuffer_(std::make_shared<rclcpp::Clock>(clock_)),
-  tflistener_(tfbuffer_),
   broadcaster_(this)
 {
   declare_parameter("global_frame_id", "map");
-  declare_parameter("odom_frame_id", "odom");
-  declare_parameter("base_frame_id", "base_link");
+  declare_parameter("odom_frame_id", "robot1/odom");
+  declare_parameter("base_frame_id", "velodyne");
   declare_parameter("registration_method", "NDT");
   declare_parameter("ndt_resolution", 1.0);
   declare_parameter("ndt_step_size", 0.1);
@@ -203,7 +200,7 @@ void PCLLocalization::initializePubSub()
     std::bind(&PCLLocalization::initialPoseReceived, this, std::placeholders::_1));
 
   map_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
-    "map", rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable(),
+    "pcl_localization/map", rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable(),
     std::bind(&PCLLocalization::mapReceived, this, std::placeholders::_1));
 
   odom_sub_ = create_subscription<nav_msgs::msg::Odometry>(
@@ -251,6 +248,7 @@ void PCLLocalization::initialPoseReceived(geometry_msgs::msg::PoseStamped::Share
   corrent_pose_stamped_ = *msg;
   pose_pub_->publish(corrent_pose_stamped_);
 }
+
 
 void PCLLocalization::mapReceived(sensor_msgs::msg::PointCloud2::SharedPtr msg)
 {
@@ -300,8 +298,11 @@ void PCLLocalization::odomReceived(nav_msgs::msg::Odometry::ConstSharedPtr msg)
   tf2::fromMsg(corrent_pose_stamped_.pose.orientation, previous_quat_tf);
   tf2::Matrix3x3(previous_quat_tf).getRPY(roll, pitch, yaw);
 
-  roll += msg->twist.twist.angular.x * dt_odom;
-  pitch += msg->twist.twist.angular.y * dt_odom;
+  // Remove roll and pitch because robot will most likely be planar.
+//  roll += msg->twist.twist.angular.x * dt_odom;
+//  pitch += msg->twist.twist.angular.y * dt_odom;
+//  roll = 0;
+//  pitch = 0;
   yaw += msg->twist.twist.angular.z * dt_odom;
 
   Eigen::Quaterniond quat_eig =
@@ -311,10 +312,11 @@ void PCLLocalization::odomReceived(nav_msgs::msg::Odometry::ConstSharedPtr msg)
 
   geometry_msgs::msg::Quaternion quat_msg = tf2::toMsg(quat_eig);
 
+  // Remove effect of the z position.
   Eigen::Vector3d odom{
     msg->twist.twist.linear.x,
     msg->twist.twist.linear.y,
-    msg->twist.twist.linear.z};
+    0};
   Eigen::Vector3d delta_position = quat_eig.matrix() * dt_odom * odom;
 
   corrent_pose_stamped_.pose.position.x += delta_position.x();
@@ -327,38 +329,17 @@ void PCLLocalization::imuReceived(sensor_msgs::msg::Imu::ConstSharedPtr msg)
 {
   if (!use_imu_) {return;}
 
-  sensor_msgs::msg::Imu tf_converted_imu;
+  double roll, pitch, yaw;
+  tf2::Quaternion orientation;
+  tf2::fromMsg(msg->orientation, orientation);
+  tf2::Matrix3x3(orientation).getRPY(roll, pitch, yaw);
+  float acc_x = msg->linear_acceleration.x + sin(pitch) * 9.81;
+  float acc_y = msg->linear_acceleration.y - cos(pitch) * sin(roll) * 9.81;
+  float acc_z = msg->linear_acceleration.z - cos(pitch) * cos(roll) * 9.81;
 
-  try {
-    const geometry_msgs::msg::TransformStamped transform = tfbuffer_.lookupTransform(
-     base_frame_id_, msg->header.frame_id, tf2::TimePointZero);
-
-    geometry_msgs::msg::Vector3Stamped angular_velocity, linear_acceleration, transformed_angular_velocity, transformed_linear_acceleration;
-    geometry_msgs::msg::Quaternion  transformed_quaternion;
-
-    angular_velocity.header = msg->header;
-    angular_velocity.vector = msg->angular_velocity;
-    linear_acceleration.header = msg->header;
-    linear_acceleration.vector = msg->linear_acceleration;
-
-    tf2::doTransform(angular_velocity, transformed_angular_velocity, transform);
-    tf2::doTransform(linear_acceleration, transformed_linear_acceleration, transform);
-
-    tf_converted_imu.angular_velocity = transformed_angular_velocity.vector;
-    tf_converted_imu.linear_acceleration = transformed_linear_acceleration.vector;
-    tf_converted_imu.orientation = transformed_quaternion;
-
-  }
-  catch (tf2::TransformException& ex)
-  {
-    std::cout << "Failed to lookup transform" << std::endl;
-    RCLCPP_WARN(this->get_logger(), "Failed to lookup transform.");
-    return;
-  }
-
-  Eigen::Vector3f angular_velo{tf_converted_imu.angular_velocity.x, tf_converted_imu.angular_velocity.y,
-    tf_converted_imu.angular_velocity.z};
-  Eigen::Vector3f acc{tf_converted_imu.linear_acceleration.x, tf_converted_imu.linear_acceleration.y, tf_converted_imu.linear_acceleration.z};
+  Eigen::Vector3f angular_velo{msg->angular_velocity.x, msg->angular_velocity.y,
+    msg->angular_velocity.z};
+  Eigen::Vector3f acc{acc_x, acc_y, acc_z};
   Eigen::Quaternionf quat{msg->orientation.w, msg->orientation.x, msg->orientation.y,
     msg->orientation.z};
   double imu_time = msg->header.stamp.sec +
