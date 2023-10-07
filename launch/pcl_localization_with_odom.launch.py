@@ -24,7 +24,14 @@ def generate_launch_description():
         name='lidar_tf',
         package='tf2_ros',
         executable='static_transform_publisher',
-        arguments=['0','0','0','0','0','0','1','robot1/base_link','velodyne']
+        arguments=['0','0','0.75','0','0','0','1','robot1/odom','velodyne']
+        )
+
+    inter_map_tf = launch_ros.actions.Node(
+        name='inter_map_tf',
+        package='tf2_ros',
+        executable='static_transform_publisher',
+        arguments=['27.47','29.74','0','0','0','0.6819984','0.7313537','map','inter_map']
         )
 
     # imu_tf = launch_ros.actions.Node(
@@ -87,6 +94,7 @@ def generate_launch_description():
     )
     
     ld.add_action(lidar_tf)
+    ld.add_action(inter_map_tf)
     ld.add_action(from_unconfigured_to_inactive)
     ld.add_action(from_inactive_to_active)
     

@@ -3,7 +3,7 @@ PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
 : rclcpp_lifecycle::LifecycleNode("pcl_localization", options),
   broadcaster_(this)
 {
-  declare_parameter("global_frame_id", "map");
+  declare_parameter("global_frame_id", "inter_map");
   declare_parameter("odom_frame_id", "robot1/odom");
   declare_parameter("base_frame_id", "velodyne");
   declare_parameter("registration_method", "NDT");
